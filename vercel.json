@@ -1,1 +1,7 @@
-{}
+{
+  "functions": {
+    "api/create-post.py": {
+      "runtime": "python3.9"
+    }
+  }
+}
