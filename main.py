@@ -2,7 +2,8 @@ from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 import os
-import libsql_client
+import requests
+import json as json_lib
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from passlib.context import CryptContext
@@ -36,11 +37,30 @@ class PostCreate(BaseModel):
     text: str
     category: str
 
-def get_db():
-    return libsql_client.create_client_sync(
-        url=os.getenv("TURSO_DB_URL"),
-        auth_token=os.getenv("TURSO_DB_TOKEN")
-    )
+def execute_sql(query, params=None):
+    turso_url = os.getenv("TURSO_DB_URL")
+    turso_token = os.getenv("TURSO_DB_TOKEN")
+    
+    # Convert libsql URL to HTTP API URL
+    api_url = turso_url.replace("libsql://", "https://").replace(".turso.io", ".turso.io/v2/pipeline")
+    
+    headers = {
+        "Authorization": f"Bearer {turso_token}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "requests": [{
+            "type": "execute",
+            "stmt": {
+                "sql": query,
+                "args": params or []
+            }
+        }]
+    }
+    
+    response = requests.post(api_url, headers=headers, json=payload)
+    return response.json()
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
@@ -67,15 +87,13 @@ def test_database():
         if not turso_token:
             return {"error": "TURSO_DB_TOKEN not found"}
             
-        db = get_db()
-        
         # Test simple query
-        result = db.execute("SELECT 1 as test")
+        result = execute_sql("SELECT 1 as test")
         
         return {
             "status": "success",
             "message": "Database connection working",
-            "test_result": result.rows[0][0] if result.rows else None
+            "test_result": result
         }
     except Exception as e:
         return {"error": str(e), "type": type(e).__name__}
@@ -97,18 +115,17 @@ def signup(user_data: UserSignup):
 
 @app.post("/login")
 def login(credentials: UserLogin):
-    db = get_db()
-    
-    result = db.execute(
+    result = execute_sql(
         "SELECT * FROM users WHERE username = ?",
         [credentials.username]
     )
     
-    if not result.rows or not pwd_context.verify(credentials.password, result.rows[0][7]):
+    rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+    if not rows or not pwd_context.verify(credentials.password, rows[0][7]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     token = jwt.encode(
-        {"sub": result.rows[0][0], "exp": datetime.utcnow() + timedelta(minutes=30)},
+        {"sub": rows[0][0], "exp": datetime.utcnow() + timedelta(minutes=30)},
         os.getenv("SECRET_KEY", "fallback-secret"),
         algorithm="HS256"
     )
