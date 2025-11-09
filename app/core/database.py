@@ -1,8 +1,15 @@
 import databases
 import aiosqlite
-from .config import DATABASE_URL
+from .config import DATABASE_URL, TURSO_DATABASE_URL, TURSO_AUTH_TOKEN
 
-database = databases.Database(DATABASE_URL)
+# Configure database with Turso auth token if available
+if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
+    database = databases.Database(
+        TURSO_DATABASE_URL,
+        connect_args={"auth_token": TURSO_AUTH_TOKEN}
+    )
+else:
+    database = databases.Database(DATABASE_URL)
 
 async def init_db():
     """Initialize database with schema"""
