@@ -38,8 +38,8 @@ class PostCreate(BaseModel):
 
 def get_db():
     return libsql_client.create_client(
-        url=os.getenv("TURSO_DATABASE_URL"),
-        auth_token=os.getenv("TURSO_AUTH_TOKEN")
+        url=os.getenv("TURSO_DB_URL"),
+        auth_token=os.getenv("TURSO_DB_TOKEN")
     )
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
