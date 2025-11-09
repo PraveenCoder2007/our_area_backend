@@ -56,6 +56,33 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 def root():
     return {"message": "Our Area API", "status": "ok", "docs": "/docs"}
 
+@app.get("/test-db")
+def test_database():
+    try:
+        turso_url = os.getenv("TURSO_DB_URL")
+        turso_token = os.getenv("TURSO_DB_TOKEN")
+        
+        if not turso_url:
+            return {"error": "TURSO_DB_URL not found"}
+        if not turso_token:
+            return {"error": "TURSO_DB_TOKEN not found"}
+            
+        db = libsql_client.create_client(
+            url=turso_url,
+            auth_token=turso_token
+        )
+        
+        # Test simple query
+        result = db.execute("SELECT 1 as test")
+        
+        return {
+            "status": "success",
+            "message": "Database connection working",
+            "test_result": result.rows[0][0] if result.rows else None
+        }
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
+
 @app.post("/signup")
 def signup(user_data: UserSignup):
     db = get_db()
