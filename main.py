@@ -36,8 +36,8 @@ class PostCreate(BaseModel):
     text: str
     category: str
 
-async def get_db():
-    return libsql_client.create_client(
+def get_db():
+    return libsql_client.create_client_sync(
         url=os.getenv("TURSO_DB_URL"),
         auth_token=os.getenv("TURSO_DB_TOKEN")
     )
@@ -57,7 +57,7 @@ def root():
     return {"message": "Our Area API", "status": "ok", "docs": "/docs"}
 
 @app.get("/test-db")
-async def test_database():
+def test_database():
     try:
         turso_url = os.getenv("TURSO_DB_URL")
         turso_token = os.getenv("TURSO_DB_TOKEN")
@@ -67,10 +67,10 @@ async def test_database():
         if not turso_token:
             return {"error": "TURSO_DB_TOKEN not found"}
             
-        db = await get_db()
+        db = get_db()
         
         # Test simple query
-        result = await db.execute("SELECT 1 as test")
+        result = db.execute("SELECT 1 as test")
         
         return {
             "status": "success",
@@ -96,10 +96,10 @@ def signup(user_data: UserSignup):
         raise HTTPException(status_code=400, detail="Username already exists")
 
 @app.post("/login")
-async def login(credentials: UserLogin):
-    db = await get_db()
+def login(credentials: UserLogin):
+    db = get_db()
     
-    result = await db.execute(
+    result = db.execute(
         "SELECT * FROM users WHERE username = ?",
         [credentials.username]
     )
@@ -116,9 +116,9 @@ async def login(credentials: UserLogin):
     return {"access_token": token, "token_type": "bearer"}
 
 @app.get("/areas")
-async def get_areas():
-    db = await get_db()
-    result = await db.execute("SELECT * FROM areas")
+def get_areas():
+    db = get_db()
+    result = db.execute("SELECT * FROM areas")
     
     return [{
         "id": row[0],
