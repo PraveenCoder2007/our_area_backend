@@ -1,31 +1,19 @@
 services:
   - type: web
     name: our-area-backend
-    runtime: python3
+    env: python
     region: singapore
     plan: free
-    branch: main
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port 10000
-    healthCheckPath: /docs
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
     autoDeploy: true
     envVars:
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "60"
-      - key: DATABASE_URL
+      - key: TURSO_DB_URL
+        sync: false
+      - key: TURSO_DB_TOKEN
         sync: false
       - key: SECRET_KEY
         sync: false
-    buildFilter:
-      paths:
-        - main.py
-        - requirements.txt
-        - render.yaml
-        - schema.sql
-        - turso_queries.sql
-        - api/**
-      ignoredPaths:
-        - "*.md"
-        - ".git/**"
-        - "__pycache__/**"
-        - "*.pyc"
