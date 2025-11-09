@@ -100,12 +100,11 @@ def test_database():
 
 @app.post("/signup")
 def signup(user_data: UserSignup):
-    db = get_db()
     user_id = str(uuid.uuid4())
     hashed_password = pwd_context.hash(user_data.password)
     
     try:
-        db.execute(
+        execute_sql(
             "INSERT INTO users (id, display_name, username, password_hash) VALUES (?, ?, ?, ?)",
             [user_id, user_data.display_name, user_data.username, hashed_password]
         )
@@ -134,8 +133,8 @@ def login(credentials: UserLogin):
 
 @app.get("/areas")
 def get_areas():
-    db = get_db()
-    result = db.execute("SELECT * FROM areas")
+    result = execute_sql("SELECT * FROM areas")
+    rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
     
     return [{
         "id": row[0],
@@ -143,16 +142,36 @@ def get_areas():
         "center_lat": row[2],
         "center_lng": row[3],
         "radius_m": row[4]
-    } for row in result.rows]
+    } for row in rows]
 
 @app.get("/users")
+def get_users():
+    result = execute_sql("SELECT * FROM users")
+    rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+    
+    return [{
+        "id": row[0],
+        "display_name": row[1], 
+        "username": row[2],
+        "phone": row[3],
+        "email": row[4],
+        "avatar_url": row[5],
+        "bio": row[6],
+        "location_id": row[7],
+        "area_id": row[8],
+        "is_verified": row[10],
+        "created_at": row[11]
+    } for row in rows]
+
+@app.get("/users/me")
 def get_me(current_user: dict = Depends(get_current_user)):
-    db = get_db()
-    result = db.execute("SELECT * FROM users WHERE id = ?", [current_user["id"]])
-    if not result.rows:
+    result = execute_sql("SELECT * FROM users WHERE id = ?", [current_user["id"]])
+    rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+    
+    if not rows:
         raise HTTPException(status_code=404, detail="User not found")
     
-    user = result.rows[0]
+    user = rows[0]
     return {
         "id": user[0],
         "display_name": user[1],
@@ -168,13 +187,14 @@ def get_posts(
     limit: int = Query(20),
     current_user: dict = Depends(get_current_user)
 ):
-    db = get_db()
     offset = (page - 1) * limit
     
-    result = db.execute(
+    result = execute_sql(
         "SELECT p.*, u.display_name, u.username FROM posts p JOIN users u ON p.user_id = u.id WHERE p.area_id = ? AND p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT ? OFFSET ?",
         [area_id, limit, offset]
     )
+    
+    rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
     
     return [{
         "id": row[0],
@@ -184,14 +204,13 @@ def get_posts(
         "category": row[5],
         "created_at": row[8],
         "user": {"display_name": row[11], "username": row[12]}
-    } for row in result.rows]
+    } for row in rows]
 
 @app.post("/posts")
 def create_post(post_data: PostCreate, current_user: dict = Depends(get_current_user)):
-    db = get_db()
     post_id = str(uuid.uuid4())
     
-    db.execute(
+    execute_sql(
         "INSERT INTO posts (id, user_id, area_id, text, category) VALUES (?, ?, ?, ?, ?)",
         [post_id, current_user["id"], post_data.area_id, post_data.text, post_data.category]
     )
