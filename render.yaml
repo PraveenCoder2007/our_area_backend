@@ -17,3 +17,5 @@ services:
         sync: false
       - key: SECRET_KEY
         sync: false
+      - key: ALGORITHM
+        value: "HS256"

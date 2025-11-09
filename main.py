@@ -9,6 +9,9 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 import uuid
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI(title="Our Area API")
 security = HTTPBearer()
@@ -76,6 +79,10 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 def root():
     return {"message": "Our Area API", "status": "ok", "docs": "/docs"}
 
+@app.get("/debug")
+def debug():
+    return {"status": "working", "message": "API is running"}
+
 @app.get("/test-db")
 def test_database():
     try:
@@ -120,11 +127,18 @@ def login(credentials: UserLogin):
     )
     
     rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
-    if not rows or not pwd_context.verify(credentials.password, rows[0][7]):
+    if not rows:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    user_row = rows[0]
+    user_id = user_row[0].get("value") if isinstance(user_row[0], dict) else user_row[0]
+    password_hash = user_row[9].get("value") if isinstance(user_row[9], dict) else user_row[9]
+    
+    if not pwd_context.verify(credentials.password, password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     token = jwt.encode(
-        {"sub": rows[0][0], "exp": datetime.utcnow() + timedelta(minutes=30)},
+        {"sub": user_id, "exp": datetime.utcnow() + timedelta(minutes=30)},
         os.getenv("SECRET_KEY", "fallback-secret"),
         algorithm="HS256"
     )
@@ -149,18 +163,21 @@ def get_users():
     result = execute_sql("SELECT * FROM users")
     rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
     
+    def get_value(item):
+        return item.get("value") if isinstance(item, dict) and item.get("type") != "null" else None
+    
     return [{
-        "id": row[0],
-        "display_name": row[1], 
-        "username": row[2],
-        "phone": row[3],
-        "email": row[4],
-        "avatar_url": row[5],
-        "bio": row[6],
-        "location_id": row[7],
-        "area_id": row[8],
-        "is_verified": row[10],
-        "created_at": row[11]
+        "id": get_value(row[0]),
+        "display_name": get_value(row[1]), 
+        "username": get_value(row[2]),
+        "phone": get_value(row[3]),
+        "email": get_value(row[4]),
+        "avatar_url": get_value(row[5]),
+        "bio": get_value(row[6]),
+        "location_id": get_value(row[7]),
+        "area_id": get_value(row[8]),
+        "is_verified": int(get_value(row[10])) if get_value(row[10]) else 0,
+        "created_at": get_value(row[11])
     } for row in rows]
 
 @app.get("/users/me")
@@ -171,13 +188,16 @@ def get_me(current_user: dict = Depends(get_current_user)):
     if not rows:
         raise HTTPException(status_code=404, detail="User not found")
     
+    def get_value(item):
+        return item.get("value") if isinstance(item, dict) and item.get("type") != "null" else None
+    
     user = rows[0]
     return {
-        "id": user[0],
-        "display_name": user[1],
-        "username": user[2],
-        "phone": user[3],
-        "email": user[4]
+        "id": get_value(user[0]),
+        "display_name": get_value(user[1]),
+        "username": get_value(user[2]),
+        "phone": get_value(user[3]),
+        "email": get_value(user[4])
     }
 
 @app.get("/posts")
