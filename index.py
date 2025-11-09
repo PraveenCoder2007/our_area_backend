@@ -13,8 +13,13 @@ class handler(BaseHTTPRequestHandler):
             "status": "ok",
             "endpoints": [
                 "GET /api/health",
-                "POST /api/login", 
-                "GET /api/areas"
+                "POST /api/signup",
+                "POST /api/login",
+                "GET /api/users (auth required)",
+                "PUT /api/users (auth required)",
+                "GET /api/areas",
+                "GET /api/posts (auth required)",
+                "POST /api/posts (auth required)"
             ]
         }
         
