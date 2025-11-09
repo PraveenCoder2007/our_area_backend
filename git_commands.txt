@@ -1,0 +1,7 @@
+cd d:\our_area
+git init
+git add .
+git commit -m "Initial commit: FastAPI backend with Turso support"
+git branch -M main
+git remote add origin https://github.com/PraveenCoder2007/our_area_backend.git
+git push -u origin main
