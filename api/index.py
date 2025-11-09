@@ -56,6 +56,31 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 def root():
     return {"message": "Our Area API", "status": "ok", "docs": "/docs"}
 
+@app.get("/create-data")
+def create_data_via_get(text: str = "Default post", category: str = "event", area_id: str = "area1"):
+    try:
+        db = get_db()
+        post_id = str(uuid.uuid4())
+        user_id = "user1"
+        
+        db.execute(
+            "INSERT INTO posts (id, user_id, area_id, text, category) VALUES (?, ?, ?, ?, ?)",
+            [post_id, user_id, area_id, text, category]
+        )
+        
+        return {
+            "status": "success",
+            "message": "Post created successfully",
+            "data": {
+                "post_id": post_id,
+                "text": text,
+                "category": category,
+                "area_id": area_id
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.post("/signup")
 def signup(user_data: UserSignup):
     db = get_db()
