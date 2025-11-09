@@ -70,7 +70,7 @@ async def test_database():
         db = await get_db()
         
         # Test simple query
-        result = db.execute("SELECT 1 as test")
+        result = await db.execute("SELECT 1 as test")
         
         return {
             "status": "success",
@@ -99,7 +99,7 @@ def signup(user_data: UserSignup):
 async def login(credentials: UserLogin):
     db = await get_db()
     
-    result = db.execute(
+    result = await db.execute(
         "SELECT * FROM users WHERE username = ?",
         [credentials.username]
     )
@@ -118,7 +118,7 @@ async def login(credentials: UserLogin):
 @app.get("/areas")
 async def get_areas():
     db = await get_db()
-    result = db.execute("SELECT * FROM areas")
+    result = await db.execute("SELECT * FROM areas")
     
     return [{
         "id": row[0],
