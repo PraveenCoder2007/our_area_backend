@@ -62,6 +62,9 @@ def execute_sql(query, params=None):
     turso_url = os.getenv("TURSO_DB_URL")
     turso_token = os.getenv("TURSO_DB_TOKEN")
     
+    if not turso_url or not turso_token:
+        raise Exception("Missing TURSO_DB_URL or TURSO_DB_TOKEN environment variables")
+    
     # Convert libsql URL to HTTP API URL
     api_url = turso_url.replace("libsql://", "https://").replace(".turso.io", ".turso.io/v2/pipeline")
     
@@ -81,6 +84,8 @@ def execute_sql(query, params=None):
     }
     
     response = requests.post(api_url, headers=headers, json=payload)
+    if response.status_code != 200:
+        raise Exception(f"Database request failed: {response.status_code} - {response.text}")
     return response.json()
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -123,12 +128,44 @@ def test_database():
     except Exception as e:
         return {"error": str(e), "type": type(e).__name__}
 
+@app.get("/env-check")
+def check_env():
+    return {
+        "turso_url_exists": bool(os.getenv("TURSO_DB_URL")),
+        "turso_token_exists": bool(os.getenv("TURSO_DB_TOKEN")),
+        "secret_key_exists": bool(os.getenv("SECRET_KEY")),
+        "turso_url_preview": os.getenv("TURSO_DB_URL", "NOT_SET")[:50] + "..." if os.getenv("TURSO_DB_URL") else "NOT_SET"
+    }
+
+@app.post("/simple-signup")
+def simple_signup(user_data: UserSignup):
+    try:
+        user_id = str(uuid.uuid4())
+        hashed_password = pwd_context.hash(user_data.password)
+        
+        return {
+            "status": "success", 
+            "message": "User data processed",
+            "user_id": user_id,
+            "username": user_data.username,
+            "env_check": {
+                "turso_url": bool(os.getenv("TURSO_DB_URL")),
+                "turso_token": bool(os.getenv("TURSO_DB_TOKEN"))
+            }
+        }
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
+
 @app.post("/signup")
 def signup(user_data: UserSignup):
-    user_id = str(uuid.uuid4())
-    hashed_password = pwd_context.hash(user_data.password)
-    
     try:
+        # Check environment variables first
+        if not os.getenv("TURSO_DB_URL") or not os.getenv("TURSO_DB_TOKEN"):
+            raise HTTPException(status_code=500, detail="Database configuration missing")
+            
+        user_id = str(uuid.uuid4())
+        hashed_password = pwd_context.hash(user_data.password)
+        
         # Create users table if not exists
         execute_sql("""
             CREATE TABLE IF NOT EXISTS users (
