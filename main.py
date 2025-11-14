@@ -9,6 +9,7 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 import uuid
 from pydantic import BaseModel
+from typing import List
 
 app = FastAPI(title="Our Area API")
 security = HTTPBearer()
@@ -51,6 +52,7 @@ class PostCreate(BaseModel):
     text: str
     category: str
     event_time: str = None
+    image_urls: List[str] = []
 
 class CommentCreate(BaseModel):
     text: str
@@ -350,17 +352,32 @@ def get_posts(
         result = execute_sql(query, params)
         rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
         
-        return [{
-            "id": row[0],
-            "user_id": row[1],
-            "location_id": row[2],
-            "text": row[3],
-            "category": row[4],
-            "event_time": row[5],
-            "created_at": row[6],
-            "updated_at": row[7],
-            "user": {"username": row[9] if len(row) > 9 else "unknown"}
-        } for row in rows]
+        posts = []
+        for row in rows:
+            post_id = row[0]
+            
+            # Get images for this post
+            images_result = execute_sql(
+                "SELECT url FROM post_images WHERE post_id = ? ORDER BY order_idx",
+                [post_id]
+            )
+            images_rows = images_result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+            image_urls = [img[0] for img in images_rows]
+            
+            posts.append({
+                "id": row[0],
+                "user_id": row[1],
+                "location_id": row[2],
+                "text": row[3],
+                "category": row[4],
+                "event_time": row[5],
+                "created_at": row[6],
+                "updated_at": row[7],
+                "images": image_urls,
+                "user": {"username": row[9] if len(row) > 9 else "unknown"}
+            })
+        
+        return posts
     except Exception as e:
         return {"error": f"Database error: {str(e)}", "posts": []}
 
@@ -384,10 +401,42 @@ def create_post(post_data: PostCreate, current_user: dict = Depends(get_current_
             )
         """)
         
+        # Create post_images table if not exists
+        execute_sql("""
+            CREATE TABLE IF NOT EXISTS post_images (
+                id TEXT PRIMARY KEY,
+                post_id TEXT NOT NULL,
+                url TEXT NOT NULL,
+                order_idx INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Insert post
         execute_sql(
             "INSERT INTO posts (id, user_id, location_id, text, category, event_time) VALUES (?, ?, ?, ?, ?, ?)",
             [post_id, current_user["id"], post_data.location_id, post_data.text, post_data.category, post_data.event_time]
         )
+        
+        # Handle image URLs
+        if post_data.image_urls:
+            # Store images in post_images table
+            for idx, image_url in enumerate(post_data.image_urls):
+                image_id = str(uuid.uuid4())
+                execute_sql(
+                    "INSERT INTO post_images (id, post_id, url, order_idx) VALUES (?, ?, ?, ?)",
+                    [image_id, post_id, image_url, idx]
+                )
+            
+            # Automatically update user's avatar_url with first image (if user has no avatar)
+            user_result = execute_sql("SELECT avatar_url FROM users WHERE id = ?", [current_user["id"]])
+            user_rows = user_result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+            
+            if user_rows and not user_rows[0][0]:  # User has no avatar
+                execute_sql(
+                    "UPDATE users SET avatar_url = ? WHERE id = ?",
+                    [post_data.image_urls[0], current_user["id"]]
+                )
         
         return {"status": "success", "message": "Post created", "post_id": post_id}
     except Exception as e:
@@ -405,6 +454,15 @@ def get_post(post_id: str):
         raise HTTPException(status_code=404, detail="Post not found")
     
     row = rows[0]
+    
+    # Get images for this post
+    images_result = execute_sql(
+        "SELECT url FROM post_images WHERE post_id = ? ORDER BY order_idx",
+        [post_id]
+    )
+    images_rows = images_result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+    image_urls = [img[0] for img in images_rows]
+    
     return {
         "id": row[0],
         "user_id": row[1],
@@ -414,6 +472,7 @@ def get_post(post_id: str):
         "event_time": row[5],
         "created_at": row[6],
         "updated_at": row[7],
+        "images": image_urls,
         "user": {"username": row[9]}
     }
 
