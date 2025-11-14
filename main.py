@@ -73,16 +73,27 @@ def execute_sql(query, params=None):
         "Content-Type": "application/json"
     }
     
-    # Convert None values to null for Turso
+    # Format parameters for Turso API
+    formatted_params = []
     if params:
-        params = [None if p is None else str(p) if p is not None else None for p in params]
+        for p in params:
+            if p is None:
+                formatted_params.append({"type": "null"})
+            elif isinstance(p, str):
+                formatted_params.append({"type": "text", "value": p})
+            elif isinstance(p, int):
+                formatted_params.append({"type": "integer", "value": str(p)})
+            elif isinstance(p, float):
+                formatted_params.append({"type": "float", "value": str(p)})
+            else:
+                formatted_params.append({"type": "text", "value": str(p)})
     
     payload = {
         "requests": [{
             "type": "execute",
             "stmt": {
                 "sql": query,
-                "args": params or []
+                "args": formatted_params
             }
         }]
     }
