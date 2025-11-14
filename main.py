@@ -164,8 +164,8 @@ def signup(user_data: UserSignup):
             raise HTTPException(status_code=500, detail="Database configuration missing")
             
         user_id = str(uuid.uuid4())
-        # Truncate password to 72 bytes for bcrypt compatibility
-        password = user_data.password[:72] if len(user_data.password.encode('utf-8')) > 72 else user_data.password
+        # Simple password truncation for bcrypt
+        password = user_data.password[:50]  # Keep it simple
         hashed_password = pwd_context.hash(password)
         
         # Create users table if not exists
