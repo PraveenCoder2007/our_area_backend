@@ -232,16 +232,23 @@ def get_users():
         result = execute_sql("SELECT * FROM users ORDER BY created_at DESC")
         rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
         
+        def extract_value(field):
+            if isinstance(field, dict) and 'value' in field:
+                return field['value']
+            elif isinstance(field, dict) and field.get('type') == 'null':
+                return None
+            return field
+        
         return [{
-            "id": row[0],
-            "username": row[1],
-            "phone": row[2],
-            "email": row[3],
-            "avatar_url": row[4],
-            "bio": row[5],
-            "location_id": row[6],
-            "is_verified": row[8],
-            "created_at": row[9]
+            "id": extract_value(row[0]),
+            "username": extract_value(row[1]),
+            "phone": extract_value(row[2]),
+            "email": extract_value(row[3]),
+            "avatar_url": extract_value(row[4]),
+            "bio": extract_value(row[5]),
+            "location_id": extract_value(row[6]),
+            "is_verified": extract_value(row[8]),
+            "created_at": extract_value(row[9])
         } for row in rows]
     except Exception as e:
         return {"error": f"Database error: {str(e)}", "users": []}
