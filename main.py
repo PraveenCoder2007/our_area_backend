@@ -129,13 +129,29 @@ def signup(user_data: UserSignup):
     hashed_password = pwd_context.hash(user_data.password)
     
     try:
-        execute_sql(
+        # Create users table if not exists
+        execute_sql("""
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                phone TEXT,
+                email TEXT,
+                avatar_url TEXT,
+                bio TEXT,
+                location_id TEXT,
+                password_hash TEXT NOT NULL,
+                is_verified INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        result = execute_sql(
             "INSERT INTO users (id, username, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)",
             [user_id, user_data.username, user_data.phone, user_data.email, hashed_password]
         )
         return {"status": "success", "message": "User created", "user_id": user_id}
-    except:
-        raise HTTPException(status_code=400, detail="Username already exists")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error creating user: {str(e)}")
 
 @app.post("/login")
 def login(credentials: UserLogin):
@@ -158,20 +174,23 @@ def login(credentials: UserLogin):
 
 @app.get("/users")
 def get_users():
-    result = execute_sql("SELECT * FROM users ORDER BY created_at DESC")
-    rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
-    
-    return [{
-        "id": row[0],
-        "username": row[1],
-        "phone": row[2],
-        "email": row[3],
-        "avatar_url": row[4],
-        "bio": row[5],
-        "location_id": row[6],
-        "is_verified": row[8],
-        "created_at": row[9]
-    } for row in rows]
+    try:
+        result = execute_sql("SELECT * FROM users ORDER BY created_at DESC")
+        rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+        
+        return [{
+            "id": row[0],
+            "username": row[1],
+            "phone": row[2],
+            "email": row[3],
+            "avatar_url": row[4],
+            "bio": row[5],
+            "location_id": row[6],
+            "is_verified": row[8],
+            "created_at": row[9]
+        } for row in rows]
+    except Exception as e:
+        return {"error": f"Database error: {str(e)}", "users": []}
 
 @app.get("/users/me")
 def get_me(current_user: dict = Depends(get_current_user)):
@@ -194,34 +213,57 @@ def get_me(current_user: dict = Depends(get_current_user)):
 
 @app.get("/locations")
 def get_locations():
-    result = execute_sql("SELECT * FROM locations ORDER BY created_at DESC")
-    rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
-    
-    return [{
-        "id": row[0],
-        "country": row[1],
-        "state": row[2],
-        "district": row[3],
-        "city": row[4],
-        "postal_code": row[5],
-        "address_line": row[6],
-        "latitude": row[8],
-        "longitude": row[9],
-        "created_at": row[10]
-    } for row in rows]
+    try:
+        result = execute_sql("SELECT * FROM locations ORDER BY created_at DESC")
+        rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+        
+        return [{
+            "id": row[0],
+            "country": row[1],
+            "state": row[2],
+            "district": row[3],
+            "city": row[4],
+            "postal_code": row[5],
+            "address_line": row[6],
+            "latitude": row[8],
+            "longitude": row[9],
+            "created_at": row[10]
+        } for row in rows]
+    except Exception as e:
+        return {"error": f"Database error: {str(e)}", "locations": []}
 
 @app.post("/locations")
 def create_location(location_data: LocationCreate, current_user: dict = Depends(get_current_user)):
     location_id = str(uuid.uuid4())
     
-    execute_sql(
-        "INSERT INTO locations (id, country, state, district, city, postal_code, address_line, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [location_id, location_data.country, location_data.state, location_data.district, 
-         location_data.city, location_data.postal_code, location_data.address_line, 
-         location_data.latitude, location_data.longitude]
-    )
-    
-    return {"status": "success", "message": "Location created", "location_id": location_id}
+    try:
+        # Create locations table if not exists
+        execute_sql("""
+            CREATE TABLE IF NOT EXISTS locations (
+                id TEXT PRIMARY KEY,
+                country TEXT,
+                state TEXT,
+                district TEXT,
+                city TEXT,
+                postal_code TEXT,
+                address_line TEXT,
+                city_id TEXT,
+                latitude REAL,
+                longitude REAL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        execute_sql(
+            "INSERT INTO locations (id, country, state, district, city, postal_code, address_line, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [location_id, location_data.country, location_data.state, location_data.district, 
+             location_data.city, location_data.postal_code, location_data.address_line, 
+             location_data.latitude, location_data.longitude]
+        )
+        
+        return {"status": "success", "message": "Location created", "location_id": location_id}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error creating location: {str(e)}")
 
 @app.get("/posts")
 def get_posts(
@@ -229,40 +271,61 @@ def get_posts(
     page: int = Query(1),
     limit: int = Query(20)
 ):
-    offset = (page - 1) * limit
-    
-    if location_id:
-        query = "SELECT p.*, u.username FROM posts p JOIN users u ON p.user_id = u.id WHERE p.location_id = ? AND p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT ? OFFSET ?"
-        params = [location_id, limit, offset]
-    else:
-        query = "SELECT p.*, u.username FROM posts p JOIN users u ON p.user_id = u.id WHERE p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT ? OFFSET ?"
-        params = [limit, offset]
-    
-    result = execute_sql(query, params)
-    rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
-    
-    return [{
-        "id": row[0],
-        "user_id": row[1],
-        "location_id": row[2],
-        "text": row[3],
-        "category": row[4],
-        "event_time": row[5],
-        "created_at": row[6],
-        "updated_at": row[7],
-        "user": {"username": row[9]}
-    } for row in rows]
+    try:
+        offset = (page - 1) * limit
+        
+        if location_id:
+            query = "SELECT p.*, u.username FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.location_id = ? AND p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT ? OFFSET ?"
+            params = [location_id, limit, offset]
+        else:
+            query = "SELECT p.*, u.username FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT ? OFFSET ?"
+            params = [limit, offset]
+        
+        result = execute_sql(query, params)
+        rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+        
+        return [{
+            "id": row[0],
+            "user_id": row[1],
+            "location_id": row[2],
+            "text": row[3],
+            "category": row[4],
+            "event_time": row[5],
+            "created_at": row[6],
+            "updated_at": row[7],
+            "user": {"username": row[9] if len(row) > 9 else "unknown"}
+        } for row in rows]
+    except Exception as e:
+        return {"error": f"Database error: {str(e)}", "posts": []}
 
 @app.post("/posts")
 def create_post(post_data: PostCreate, current_user: dict = Depends(get_current_user)):
     post_id = str(uuid.uuid4())
     
-    execute_sql(
-        "INSERT INTO posts (id, user_id, location_id, text, category, event_time) VALUES (?, ?, ?, ?, ?, ?)",
-        [post_id, current_user["id"], post_data.location_id, post_data.text, post_data.category, post_data.event_time]
-    )
-    
-    return {"status": "success", "message": "Post created", "post_id": post_id}
+    try:
+        # Create posts table if not exists
+        execute_sql("""
+            CREATE TABLE IF NOT EXISTS posts (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                location_id TEXT,
+                text TEXT NOT NULL,
+                category TEXT NOT NULL,
+                event_time DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                is_deleted INTEGER DEFAULT 0
+            )
+        """)
+        
+        execute_sql(
+            "INSERT INTO posts (id, user_id, location_id, text, category, event_time) VALUES (?, ?, ?, ?, ?, ?)",
+            [post_id, current_user["id"], post_data.location_id, post_data.text, post_data.category, post_data.event_time]
+        )
+        
+        return {"status": "success", "message": "Post created", "post_id": post_id}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error creating post: {str(e)}")
 
 @app.get("/posts/{post_id}")
 def get_post(post_id: str):
