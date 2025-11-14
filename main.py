@@ -73,6 +73,10 @@ def execute_sql(query, params=None):
         "Content-Type": "application/json"
     }
     
+    # Convert None values to null for Turso
+    if params:
+        params = [None if p is None else str(p) if p is not None else None for p in params]
+    
     payload = {
         "requests": [{
             "type": "execute",
@@ -186,7 +190,7 @@ def signup(user_data: UserSignup):
         
         result = execute_sql(
             "INSERT INTO users (id, username, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)",
-            [user_id, user_data.username, user_data.phone, user_data.email, hashed_password]
+            [user_id, user_data.username, user_data.phone or None, user_data.email or None, hashed_password]
         )
         return {"status": "success", "message": "User created", "user_id": user_id}
     except Exception as e:
