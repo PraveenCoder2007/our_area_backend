@@ -28,6 +28,9 @@ class UserSignup(BaseModel):
     password: str
     phone: str = None
     email: str = None
+    avatar_url: str = None
+    bio: str = None
+    location_id: str = None
 
 class UserLogin(BaseModel):
     username: str
@@ -200,8 +203,8 @@ def signup(user_data: UserSignup):
         """)
         
         result = execute_sql(
-            "INSERT INTO users (id, username, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)",
-            [user_id, user_data.username, user_data.phone or None, user_data.email or None, hashed_password]
+            "INSERT INTO users (id, username, phone, email, avatar_url, bio, location_id, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [user_id, user_data.username, user_data.phone, user_data.email, user_data.avatar_url, user_data.bio, user_data.location_id, hashed_password]
         )
         return {"status": "success", "message": "User created", "user_id": user_id}
     except Exception as e:
