@@ -9,9 +9,6 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 import uuid
 from pydantic import BaseModel
-from dotenv import load_dotenv
-
-load_dotenv()
 
 app = FastAPI(title="Our Area API")
 security = HTTPBearer()
@@ -27,18 +24,39 @@ app.add_middleware(
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class UserSignup(BaseModel):
-    display_name: str
     username: str
     password: str
+    phone: str = None
+    email: str = None
 
 class UserLogin(BaseModel):
     username: str
     password: str
 
+class LocationCreate(BaseModel):
+    country: str = None
+    state: str = None
+    district: str = None
+    city: str = None
+    postal_code: str = None
+    address_line: str = None
+    latitude: float = None
+    longitude: float = None
+
 class PostCreate(BaseModel):
-    area_id: str
+    location_id: str = None
     text: str
     category: str
+    event_time: str = None
+
+class CommentCreate(BaseModel):
+    text: str
+
+class ReportCreate(BaseModel):
+    post_id: str = None
+    reported_user_id: str = None
+    reason: str
+    description: str = None
 
 def execute_sql(query, params=None):
     turso_url = os.getenv("TURSO_DB_URL")
@@ -112,10 +130,10 @@ def signup(user_data: UserSignup):
     
     try:
         execute_sql(
-            "INSERT INTO users (id, display_name, username, password_hash) VALUES (?, ?, ?, ?)",
-            [user_id, user_data.display_name, user_data.username, hashed_password]
+            "INSERT INTO users (id, username, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)",
+            [user_id, user_data.username, user_data.phone, user_data.email, hashed_password]
         )
-        return {"status": "success", "message": "User created"}
+        return {"status": "success", "message": "User created", "user_id": user_id}
     except:
         raise HTTPException(status_code=400, detail="Username already exists")
 
@@ -127,57 +145,32 @@ def login(credentials: UserLogin):
     )
     
     rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
-    if not rows:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    user_row = rows[0]
-    user_id = user_row[0].get("value") if isinstance(user_row[0], dict) else user_row[0]
-    password_hash = user_row[9].get("value") if isinstance(user_row[9], dict) else user_row[9]
-    
-    if not pwd_context.verify(credentials.password, password_hash):
+    if not rows or not pwd_context.verify(credentials.password, rows[0][7]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     token = jwt.encode(
-        {"sub": user_id, "exp": datetime.utcnow() + timedelta(minutes=30)},
+        {"sub": rows[0][0], "exp": datetime.utcnow() + timedelta(minutes=30)},
         os.getenv("SECRET_KEY", "fallback-secret"),
         algorithm="HS256"
     )
     
-    return {"access_token": token, "token_type": "bearer"}
+    return {"access_token": token, "token_type": "bearer", "user_id": rows[0][0]}
 
-@app.get("/areas")
-def get_areas():
-    result = execute_sql("SELECT * FROM areas")
+@app.get("/users")
+def get_users():
+    result = execute_sql("SELECT * FROM users ORDER BY created_at DESC")
     rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
     
     return [{
         "id": row[0],
-        "name": row[1],
-        "center_lat": row[2],
-        "center_lng": row[3],
-        "radius_m": row[4]
-    } for row in rows]
-
-@app.get("/users")
-def get_users():
-    result = execute_sql("SELECT * FROM users")
-    rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
-    
-    def get_value(item):
-        return item.get("value") if isinstance(item, dict) and item.get("type") != "null" else None
-    
-    return [{
-        "id": get_value(row[0]),
-        "display_name": get_value(row[1]), 
-        "username": get_value(row[2]),
-        "phone": get_value(row[3]),
-        "email": get_value(row[4]),
-        "avatar_url": get_value(row[5]),
-        "bio": get_value(row[6]),
-        "location_id": get_value(row[7]),
-        "area_id": get_value(row[8]),
-        "is_verified": int(get_value(row[10])) if get_value(row[10]) else 0,
-        "created_at": get_value(row[11])
+        "username": row[1],
+        "phone": row[2],
+        "email": row[3],
+        "avatar_url": row[4],
+        "bio": row[5],
+        "location_id": row[6],
+        "is_verified": row[8],
+        "created_at": row[9]
     } for row in rows]
 
 @app.get("/users/me")
@@ -188,42 +181,76 @@ def get_me(current_user: dict = Depends(get_current_user)):
     if not rows:
         raise HTTPException(status_code=404, detail="User not found")
     
-    def get_value(item):
-        return item.get("value") if isinstance(item, dict) and item.get("type") != "null" else None
-    
     user = rows[0]
     return {
-        "id": get_value(user[0]),
-        "display_name": get_value(user[1]),
-        "username": get_value(user[2]),
-        "phone": get_value(user[3]),
-        "email": get_value(user[4])
+        "id": user[0],
+        "username": user[1],
+        "phone": user[2],
+        "email": user[3],
+        "avatar_url": user[4],
+        "bio": user[5],
+        "location_id": user[6]
     }
+
+@app.get("/locations")
+def get_locations():
+    result = execute_sql("SELECT * FROM locations ORDER BY created_at DESC")
+    rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+    
+    return [{
+        "id": row[0],
+        "country": row[1],
+        "state": row[2],
+        "district": row[3],
+        "city": row[4],
+        "postal_code": row[5],
+        "address_line": row[6],
+        "latitude": row[8],
+        "longitude": row[9],
+        "created_at": row[10]
+    } for row in rows]
+
+@app.post("/locations")
+def create_location(location_data: LocationCreate, current_user: dict = Depends(get_current_user)):
+    location_id = str(uuid.uuid4())
+    
+    execute_sql(
+        "INSERT INTO locations (id, country, state, district, city, postal_code, address_line, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [location_id, location_data.country, location_data.state, location_data.district, 
+         location_data.city, location_data.postal_code, location_data.address_line, 
+         location_data.latitude, location_data.longitude]
+    )
+    
+    return {"status": "success", "message": "Location created", "location_id": location_id}
 
 @app.get("/posts")
 def get_posts(
-    area_id: str = Query("area1"),
+    location_id: str = Query(None),
     page: int = Query(1),
-    limit: int = Query(20),
-    current_user: dict = Depends(get_current_user)
+    limit: int = Query(20)
 ):
     offset = (page - 1) * limit
     
-    result = execute_sql(
-        "SELECT p.*, u.display_name, u.username FROM posts p JOIN users u ON p.user_id = u.id WHERE p.area_id = ? AND p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT ? OFFSET ?",
-        [area_id, limit, offset]
-    )
+    if location_id:
+        query = "SELECT p.*, u.username FROM posts p JOIN users u ON p.user_id = u.id WHERE p.location_id = ? AND p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT ? OFFSET ?"
+        params = [location_id, limit, offset]
+    else:
+        query = "SELECT p.*, u.username FROM posts p JOIN users u ON p.user_id = u.id WHERE p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT ? OFFSET ?"
+        params = [limit, offset]
     
+    result = execute_sql(query, params)
     rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
     
     return [{
         "id": row[0],
         "user_id": row[1],
-        "area_id": row[2],
-        "text": row[4],
-        "category": row[5],
-        "created_at": row[8],
-        "user": {"display_name": row[11], "username": row[12]}
+        "location_id": row[2],
+        "text": row[3],
+        "category": row[4],
+        "event_time": row[5],
+        "created_at": row[6],
+        "updated_at": row[7],
+        "user": {"username": row[9]}
     } for row in rows]
 
 @app.post("/posts")
@@ -231,11 +258,121 @@ def create_post(post_data: PostCreate, current_user: dict = Depends(get_current_
     post_id = str(uuid.uuid4())
     
     execute_sql(
-        "INSERT INTO posts (id, user_id, area_id, text, category) VALUES (?, ?, ?, ?, ?)",
-        [post_id, current_user["id"], post_data.area_id, post_data.text, post_data.category]
+        "INSERT INTO posts (id, user_id, location_id, text, category, event_time) VALUES (?, ?, ?, ?, ?, ?)",
+        [post_id, current_user["id"], post_data.location_id, post_data.text, post_data.category, post_data.event_time]
     )
     
-    return {"status": "success", "message": "Post created", "data": {"post_id": post_id}}
+    return {"status": "success", "message": "Post created", "post_id": post_id}
+
+@app.get("/posts/{post_id}")
+def get_post(post_id: str):
+    result = execute_sql(
+        "SELECT p.*, u.username FROM posts p JOIN users u ON p.user_id = u.id WHERE p.id = ? AND p.is_deleted = 0",
+        [post_id]
+    )
+    
+    rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+    if not rows:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    row = rows[0]
+    return {
+        "id": row[0],
+        "user_id": row[1],
+        "location_id": row[2],
+        "text": row[3],
+        "category": row[4],
+        "event_time": row[5],
+        "created_at": row[6],
+        "updated_at": row[7],
+        "user": {"username": row[9]}
+    }
+
+@app.post("/posts/{post_id}/like")
+def toggle_like(post_id: str, current_user: dict = Depends(get_current_user)):
+    # Check if like exists
+    result = execute_sql(
+        "SELECT id FROM likes WHERE post_id = ? AND user_id = ?",
+        [post_id, current_user["id"]]
+    )
+    
+    rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+    
+    if rows:
+        # Unlike
+        execute_sql("DELETE FROM likes WHERE post_id = ? AND user_id = ?", [post_id, current_user["id"]])
+        return {"status": "success", "action": "unliked"}
+    else:
+        # Like
+        like_id = str(uuid.uuid4())
+        execute_sql(
+            "INSERT INTO likes (id, post_id, user_id) VALUES (?, ?, ?)",
+            [like_id, post_id, current_user["id"]]
+        )
+        return {"status": "success", "action": "liked"}
+
+@app.post("/posts/{post_id}/wishlist")
+def toggle_wishlist(post_id: str, current_user: dict = Depends(get_current_user)):
+    # Check if wishlist exists
+    result = execute_sql(
+        "SELECT id FROM wishlists WHERE post_id = ? AND user_id = ?",
+        [post_id, current_user["id"]]
+    )
+    
+    rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+    
+    if rows:
+        # Remove from wishlist
+        execute_sql("DELETE FROM wishlists WHERE post_id = ? AND user_id = ?", [post_id, current_user["id"]])
+        return {"status": "success", "action": "removed"}
+    else:
+        # Add to wishlist
+        wishlist_id = str(uuid.uuid4())
+        execute_sql(
+            "INSERT INTO wishlists (id, post_id, user_id) VALUES (?, ?, ?)",
+            [wishlist_id, post_id, current_user["id"]]
+        )
+        return {"status": "success", "action": "added"}
+
+@app.get("/posts/{post_id}/comments")
+def get_comments(post_id: str):
+    result = execute_sql(
+        "SELECT c.*, u.username FROM comments c JOIN users u ON c.user_id = u.id WHERE c.post_id = ? ORDER BY c.created_at ASC",
+        [post_id]
+    )
+    
+    rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+    
+    return [{
+        "id": row[0],
+        "post_id": row[1],
+        "user_id": row[2],
+        "text": row[3],
+        "created_at": row[4],
+        "user": {"username": row[5]}
+    } for row in rows]
+
+@app.post("/posts/{post_id}/comments")
+def create_comment(post_id: str, comment_data: CommentCreate, current_user: dict = Depends(get_current_user)):
+    comment_id = str(uuid.uuid4())
+    
+    execute_sql(
+        "INSERT INTO comments (id, post_id, user_id, text) VALUES (?, ?, ?, ?)",
+        [comment_id, post_id, current_user["id"], comment_data.text]
+    )
+    
+    return {"status": "success", "message": "Comment created", "comment_id": comment_id}
+
+@app.post("/reports")
+def create_report(report_data: ReportCreate, current_user: dict = Depends(get_current_user)):
+    report_id = str(uuid.uuid4())
+    
+    execute_sql(
+        "INSERT INTO reports (id, reporter_id, post_id, reported_user_id, reason, description) VALUES (?, ?, ?, ?, ?, ?)",
+        [report_id, current_user["id"], report_data.post_id, report_data.reported_user_id, report_data.reason, report_data.description]
+    )
+    
+    return {"status": "success", "message": "Report submitted", "report_id": report_id}
 
 if __name__ == "__main__":
     import uvicorn
