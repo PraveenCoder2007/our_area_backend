@@ -181,7 +181,6 @@ def signup(user_data: UserSignup):
         if not os.getenv("TURSO_DB_URL") or not os.getenv("TURSO_DB_TOKEN"):
             raise HTTPException(status_code=500, detail="Database configuration missing")
             
-        user_id = str(uuid.uuid4())
         # Simple password truncation for bcrypt
         password = user_data.password[:50]  # Keep it simple
         hashed_password = pwd_context.hash(password)
@@ -189,7 +188,7 @@ def signup(user_data: UserSignup):
         # Create users table if not exists
         execute_sql("""
             CREATE TABLE IF NOT EXISTS users (
-                id TEXT PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 phone TEXT,
                 email TEXT,
@@ -203,9 +202,12 @@ def signup(user_data: UserSignup):
         """)
         
         result = execute_sql(
-            "INSERT INTO users (id, username, phone, email, avatar_url, bio, location_id, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [user_id, user_data.username, user_data.phone, user_data.email, user_data.avatar_url, user_data.bio, user_data.location_id, hashed_password]
+            "INSERT INTO users (username, phone, email, avatar_url, bio, location_id, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [user_data.username, user_data.phone, user_data.email, user_data.avatar_url, user_data.bio, user_data.location_id, hashed_password]
         )
+        
+        # Get the auto-generated user ID
+        user_id = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("last_insert_rowid")
         return {"status": "success", "message": "User created", "user_id": user_id}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error creating user: {str(e)}")
