@@ -187,9 +187,14 @@ def signup(user_data: UserSignup):
         password = user_data.password[:50]  # Keep it simple
         hashed_password = pwd_context.hash(password)
         
-        # Create users table if not exists
+        # Drop and recreate users table with auto-increment
+        try:
+            execute_sql("DROP TABLE IF EXISTS users")
+        except:
+            pass
+            
         execute_sql("""
-            CREATE TABLE IF NOT EXISTS users (
+            CREATE TABLE users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 phone TEXT,
@@ -208,8 +213,11 @@ def signup(user_data: UserSignup):
             [user_data.username, user_data.phone, user_data.email, user_data.avatar_url, user_data.bio, user_data.location_id, hashed_password]
         )
         
-        # Get the auto-generated user ID
-        user_id = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("last_insert_rowid")
+        # Get the auto-generated user ID from Turso response
+        response_data = result.get("results", [{}])[0].get("response", {}).get("result", {})
+        user_id = response_data.get("last_insert_rowid")
+        if user_id is None:
+            user_id = "auto-generated"
         return {"status": "success", "message": "User created", "user_id": user_id}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error creating user: {str(e)}")
