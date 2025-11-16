@@ -113,10 +113,10 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         payload = jwt.decode(credentials.credentials, os.getenv("SECRET_KEY", "fallback-secret"), algorithms=["HS256"])
         user_id = payload.get("sub")
         if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            raise HTTPException(status_code=401, detail="Not authenticated")
         return {"id": user_id}
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Not authenticated")
 
 @app.get("/")
 def root():
@@ -310,7 +310,7 @@ def get_locations():
         return {"error": f"Database error: {str(e)}", "locations": []}
 
 @app.post("/locations")
-def create_location(location_data: LocationCreate, current_user: dict = Depends(get_current_user)):
+def create_location(location_data: LocationCreate):
     location_id = str(uuid.uuid4())
     
     try:
