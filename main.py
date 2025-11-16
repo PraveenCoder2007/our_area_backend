@@ -48,6 +48,7 @@ class LocationCreate(BaseModel):
     longitude: float = None
 
 class PostCreate(BaseModel):
+    area_id: str = "area1"
     location_id: str = None
     text: str
     category: str
@@ -342,21 +343,50 @@ def create_location(location_data: LocationCreate, current_user: dict = Depends(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error creating location: {str(e)}")
 
+@app.get("/areas")
+def get_areas():
+    try:
+        # Create areas table if not exists
+        execute_sql("""
+            CREATE TABLE IF NOT EXISTS areas (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                center_lat REAL NOT NULL,
+                center_lng REAL NOT NULL,
+                radius_m INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Insert sample area if none exist
+        execute_sql("INSERT OR IGNORE INTO areas (id, name, center_lat, center_lng, radius_m) VALUES ('area1', 'Downtown', 12.9716, 77.5946, 5000)")
+        
+        result = execute_sql("SELECT * FROM areas ORDER BY created_at DESC")
+        rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
+        
+        return [{
+            "id": row[0],
+            "name": row[1],
+            "center_lat": row[2],
+            "center_lng": row[3],
+            "radius_m": row[4],
+            "created_at": row[5] if len(row) > 5 else None
+        } for row in rows]
+    except Exception as e:
+        return {"error": f"Database error: {str(e)}", "areas": []}
+
 @app.get("/posts")
 def get_posts(
-    location_id: str = Query(None),
+    area_id: str = Query("area1"),
     page: int = Query(1),
-    limit: int = Query(20)
+    limit: int = Query(20),
+    current_user: dict = Depends(get_current_user)
 ):
     try:
         offset = (page - 1) * limit
         
-        if location_id:
-            query = "SELECT p.*, u.username FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.location_id = ? AND p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT ? OFFSET ?"
-            params = [location_id, limit, offset]
-        else:
-            query = "SELECT p.*, u.username FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT ? OFFSET ?"
-            params = [limit, offset]
+        query = "SELECT p.*, u.username FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.area_id = ? AND p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT ? OFFSET ?"
+        params = [area_id, limit, offset]
         
         result = execute_sql(query, params)
         rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
@@ -376,14 +406,15 @@ def get_posts(
             posts.append({
                 "id": row[0],
                 "user_id": row[1],
-                "location_id": row[2],
-                "text": row[3],
-                "category": row[4],
-                "event_time": row[5],
-                "created_at": row[6],
-                "updated_at": row[7],
+                "area_id": row[2],
+                "location_id": row[3],
+                "text": row[4],
+                "category": row[5],
+                "event_time": row[6],
+                "created_at": row[7],
+                "updated_at": row[8],
                 "images": image_urls,
-                "user": {"username": row[9] if len(row) > 9 else "unknown"}
+                "user": {"username": row[10] if len(row) > 10 else "unknown"}
             })
         
         return posts
@@ -400,6 +431,7 @@ def create_post(post_data: PostCreate, current_user: dict = Depends(get_current_
             CREATE TABLE IF NOT EXISTS posts (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL,
+                area_id TEXT NOT NULL,
                 location_id TEXT,
                 text TEXT NOT NULL,
                 category TEXT NOT NULL,
@@ -421,10 +453,13 @@ def create_post(post_data: PostCreate, current_user: dict = Depends(get_current_
             )
         """)
         
+        # Ensure area exists
+        execute_sql("INSERT OR IGNORE INTO areas (id, name, center_lat, center_lng, radius_m) VALUES (?, 'Default Area', 12.9716, 77.5946, 5000)", [post_data.area_id])
+        
         # Insert post
         execute_sql(
-            "INSERT INTO posts (id, user_id, location_id, text, category, event_time) VALUES (?, ?, ?, ?, ?, ?)",
-            [post_id, current_user["id"], post_data.location_id, post_data.text, post_data.category, post_data.event_time]
+            "INSERT INTO posts (id, user_id, area_id, location_id, text, category, event_time) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [post_id, current_user["id"], post_data.area_id, post_data.location_id, post_data.text, post_data.category, post_data.event_time]
         )
         
         # Handle image URLs
@@ -475,18 +510,29 @@ def get_post(post_id: str):
     return {
         "id": row[0],
         "user_id": row[1],
-        "location_id": row[2],
-        "text": row[3],
-        "category": row[4],
-        "event_time": row[5],
-        "created_at": row[6],
-        "updated_at": row[7],
+        "area_id": row[2],
+        "location_id": row[3],
+        "text": row[4],
+        "category": row[5],
+        "event_time": row[6],
+        "created_at": row[7],
+        "updated_at": row[8],
         "images": image_urls,
-        "user": {"username": row[9]}
+        "user": {"username": row[10]}
     }
 
 @app.post("/posts/{post_id}/like")
 def toggle_like(post_id: str, current_user: dict = Depends(get_current_user)):
+    # Create likes table if not exists
+    execute_sql("""
+        CREATE TABLE IF NOT EXISTS likes (
+            id TEXT PRIMARY KEY,
+            post_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
     # Check if like exists
     result = execute_sql(
         "SELECT id FROM likes WHERE post_id = ? AND user_id = ?",
@@ -510,6 +556,16 @@ def toggle_like(post_id: str, current_user: dict = Depends(get_current_user)):
 
 @app.post("/posts/{post_id}/wishlist")
 def toggle_wishlist(post_id: str, current_user: dict = Depends(get_current_user)):
+    # Create wishlists table if not exists
+    execute_sql("""
+        CREATE TABLE IF NOT EXISTS wishlists (
+            id TEXT PRIMARY KEY,
+            post_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
     # Check if wishlist exists
     result = execute_sql(
         "SELECT id FROM wishlists WHERE post_id = ? AND user_id = ?",
@@ -551,6 +607,17 @@ def get_comments(post_id: str):
 
 @app.post("/posts/{post_id}/comments")
 def create_comment(post_id: str, comment_data: CommentCreate, current_user: dict = Depends(get_current_user)):
+    # Create comments table if not exists
+    execute_sql("""
+        CREATE TABLE IF NOT EXISTS comments (
+            id TEXT PRIMARY KEY,
+            post_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            text TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
     comment_id = str(uuid.uuid4())
     
     execute_sql(
@@ -562,6 +629,19 @@ def create_comment(post_id: str, comment_data: CommentCreate, current_user: dict
 
 @app.post("/reports")
 def create_report(report_data: ReportCreate, current_user: dict = Depends(get_current_user)):
+    # Create reports table if not exists
+    execute_sql("""
+        CREATE TABLE IF NOT EXISTS reports (
+            id TEXT PRIMARY KEY,
+            reporter_id TEXT NOT NULL,
+            post_id TEXT,
+            reported_user_id TEXT,
+            reason TEXT NOT NULL,
+            description TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
     report_id = str(uuid.uuid4())
     
     execute_sql(
