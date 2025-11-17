@@ -271,8 +271,8 @@ def get_users():
         return {"error": f"Database error: {str(e)}", "users": []}
 
 @app.get("/users/me")
-def get_me(current_user: dict = Depends(get_current_user)):
-    result = execute_sql("SELECT * FROM users WHERE id = ?", [current_user["id"]])
+def get_me():
+    result = execute_sql("SELECT * FROM users WHERE id = ?", [1])
     rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
     
     if not rows:
@@ -311,7 +311,7 @@ def get_locations():
         return {"error": f"Database error: {str(e)}", "locations": []}
 
 @app.post("/locations")
-def create_location(location_data: LocationCreate, current_user: dict = Depends(get_current_user)):
+def create_location(location_data: LocationCreate):
     location_id = str(uuid.uuid4())
     
     try:
@@ -422,7 +422,7 @@ def get_posts(
         return {"error": f"Database error: {str(e)}", "posts": []}
 
 @app.post("/posts")
-def create_post(post_data: PostCreate, current_user: dict = Depends(get_current_user)):
+def create_post(post_data: PostCreate):
     post_id = str(uuid.uuid4())
     
     try:
@@ -522,7 +522,7 @@ def get_post(post_id: str):
     }
 
 @app.post("/posts/{post_id}/like")
-def toggle_like(post_id: str, current_user: dict = Depends(get_current_user)):
+def toggle_like(post_id: str):
     # Create likes table if not exists
     execute_sql("""
         CREATE TABLE IF NOT EXISTS likes (
@@ -536,26 +536,26 @@ def toggle_like(post_id: str, current_user: dict = Depends(get_current_user)):
     # Check if like exists
     result = execute_sql(
         "SELECT id FROM likes WHERE post_id = ? AND user_id = ?",
-        [post_id, current_user["id"]]
+        [post_id, 1]
     )
     
     rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
     
     if rows:
         # Unlike
-        execute_sql("DELETE FROM likes WHERE post_id = ? AND user_id = ?", [post_id, current_user["id"]])
+        execute_sql("DELETE FROM likes WHERE post_id = ? AND user_id = ?", [post_id, 1])
         return {"status": "success", "action": "unliked"}
     else:
         # Like
         like_id = str(uuid.uuid4())
         execute_sql(
             "INSERT INTO likes (id, post_id, user_id) VALUES (?, ?, ?)",
-            [like_id, post_id, current_user["id"]]
+            [like_id, post_id, 1]
         )
         return {"status": "success", "action": "liked"}
 
 @app.post("/posts/{post_id}/wishlist")
-def toggle_wishlist(post_id: str, current_user: dict = Depends(get_current_user)):
+def toggle_wishlist(post_id: str):
     # Create wishlists table if not exists
     execute_sql("""
         CREATE TABLE IF NOT EXISTS wishlists (
@@ -569,21 +569,21 @@ def toggle_wishlist(post_id: str, current_user: dict = Depends(get_current_user)
     # Check if wishlist exists
     result = execute_sql(
         "SELECT id FROM wishlists WHERE post_id = ? AND user_id = ?",
-        [post_id, current_user["id"]]
+        [post_id, 1]
     )
     
     rows = result.get("results", [{}])[0].get("response", {}).get("result", {}).get("rows", [])
     
     if rows:
         # Remove from wishlist
-        execute_sql("DELETE FROM wishlists WHERE post_id = ? AND user_id = ?", [post_id, current_user["id"]])
+        execute_sql("DELETE FROM wishlists WHERE post_id = ? AND user_id = ?", [post_id, 1])
         return {"status": "success", "action": "removed"}
     else:
         # Add to wishlist
         wishlist_id = str(uuid.uuid4())
         execute_sql(
             "INSERT INTO wishlists (id, post_id, user_id) VALUES (?, ?, ?)",
-            [wishlist_id, post_id, current_user["id"]]
+            [wishlist_id, post_id, 1]
         )
         return {"status": "success", "action": "added"}
 
@@ -606,7 +606,7 @@ def get_comments(post_id: str):
     } for row in rows]
 
 @app.post("/posts/{post_id}/comments")
-def create_comment(post_id: str, comment_data: CommentCreate, current_user: dict = Depends(get_current_user)):
+def create_comment(post_id: str, comment_data: CommentCreate):
     # Create comments table if not exists
     execute_sql("""
         CREATE TABLE IF NOT EXISTS comments (
@@ -622,13 +622,13 @@ def create_comment(post_id: str, comment_data: CommentCreate, current_user: dict
     
     execute_sql(
         "INSERT INTO comments (id, post_id, user_id, text) VALUES (?, ?, ?, ?)",
-        [comment_id, post_id, current_user["id"], comment_data.text]
+        [comment_id, post_id, 1, comment_data.text]
     )
     
     return {"status": "success", "message": "Comment created", "comment_id": comment_id}
 
 @app.post("/reports")
-def create_report(report_data: ReportCreate, current_user: dict = Depends(get_current_user)):
+def create_report(report_data: ReportCreate):
     # Create reports table if not exists
     execute_sql("""
         CREATE TABLE IF NOT EXISTS reports (
@@ -646,7 +646,7 @@ def create_report(report_data: ReportCreate, current_user: dict = Depends(get_cu
     
     execute_sql(
         "INSERT INTO reports (id, reporter_id, post_id, reported_user_id, reason, description) VALUES (?, ?, ?, ?, ?, ?)",
-        [report_id, current_user["id"], report_data.post_id, report_data.reported_user_id, report_data.reason, report_data.description]
+        [report_id, 1, report_data.post_id, report_data.reported_user_id, report_data.reason, report_data.description]
     )
     
     return {"status": "success", "message": "Report submitted", "report_id": report_id}
