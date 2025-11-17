@@ -114,10 +114,10 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         payload = jwt.decode(credentials.credentials, os.getenv("SECRET_KEY", "fallback-secret"), algorithms=["HS256"])
         user_id = payload.get("sub")
         if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            raise HTTPException(status_code=401, detail="Not authenticated")
         return {"id": user_id}
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Not authenticated")
 
 @app.get("/")
 def root():
